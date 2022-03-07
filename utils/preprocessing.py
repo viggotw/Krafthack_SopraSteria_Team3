@@ -28,12 +28,11 @@ def get_temporal_lookback_features(df: pd.DataFrame, cols: List[str], window_siz
         for i in range(1, window_size, steps):
             df.loc[:,f"{col}_t-{i}"] = df.loc[:,col].shift(i)
 
-    df = df.dropna()
-    df = df.reindex(sorted(df.columns), axis=1)
+    df = df.loc[df[cols].dropna().index]
     return df
 
 
-def get_temporal_lookback_df(list_of_dfs: List[pd.DataFrame], cols: List[str], window_size: int) -> pd.DataFrame:
+def get_temporal_lookback_df(list_of_dfs: List[pd.DataFrame], cols: List[str], window_size: int, steps: int = 1) -> pd.DataFrame:
     ''' Accepts a list of dataframes, creates look-back features for each of them
     and concatenates the results into a dataframe
     :param list_of_dfs: List of dataframes with a datatime index
@@ -46,7 +45,32 @@ def get_temporal_lookback_df(list_of_dfs: List[pd.DataFrame], cols: List[str], w
 
     for df in list_of_dfs:
         new_df.append(
-            get_temporal_lookback_features(df, cols=cols, window_size=window_size)
+            get_temporal_lookback_features(df, cols=cols, window_size=window_size, steps=steps)
         )
 
     return pd.concat(new_df, axis=0)
+
+
+def add_seconds_operational(dataframe):
+    # Find index of "start" modes in the timeseries
+    start_ts = dataframe[dataframe['mode'] == 'start'].index
+    # Calculate secods until next "start" mode
+    secs_since_last_start = (start_ts[1:] - start_ts[:-1]).seconds
+    # Extract a list of "timeslots" that pairwise indicate a sequence of operation
+    last_start_before_counting = start_ts[:-1][secs_since_last_start > 1]
+    last_start_before_counting = list(last_start_before_counting)
+    last_start_before_counting.append(dataframe.index[-1])
+    # Create new feature
+    dataframe['sec_since_last_start'] = 0
+    for t1, t2 in zip(last_start_before_counting[:-1], last_start_before_counting[1:]):
+        dataframe.loc[t1:t2, 'sec_since_last_start'] = range(len(dataframe[t1:t2]))
+    # Force "start" mde to equal 0 seconds
+    dataframe.loc[dataframe['mode'] == 'start', 'sec_since_last_start'] = 0
+    # Look at the last timeslot
+    dataframe.loc[t1:t2, ['mode', 'sec_since_last_start']]
+    return dataframe
+
+
+def add_hour_feature(dataframe):
+    dataframe['hour'] = dataframe.index.hour
+    return dataframe
