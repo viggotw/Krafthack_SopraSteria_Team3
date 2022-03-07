@@ -129,5 +129,4 @@ dmypy.json
 .pyre/
 
 # Data folder
-/container-data
 /data
